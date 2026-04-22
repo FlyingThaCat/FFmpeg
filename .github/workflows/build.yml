@@ -27,7 +27,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt update
-          sudo apt install -y build-essential yasm pkg-config
+          sudo apt install -y build-essential yasm pkg-config nasm
 
       - name: Install macOS deps
         if: matrix.os == 'macos-latest'
