@@ -1,0 +1,93 @@
+name: Build FFmpeg (multi-platform)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Create GitHub Release?"
+        required: false
+        default: "false"
+  schedule:
+    - cron: "0 3 * * *"
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout FFmpeg
+        run: |
+          git clone https://git.ffmpeg.org/ffmpeg.git ffmpeg
+
+      - name: Install Linux deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential yasm pkg-config
+
+      - name: Install macOS deps
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install yasm pkg-config
+
+      - name: Install Windows deps (MSYS2)
+        if: matrix.os == 'windows-latest'
+        uses: msys2/setup-msys2@v2
+        with:
+          install: >
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-yasm
+            mingw-w64-x86_64-pkg-config
+
+      # ---------- BUILD LINUX ----------
+      - name: Build Linux FFmpeg
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cd ffmpeg
+          ./configure \
+            --disable-shared \
+            --enable-static \
+            --disable-debug \
+            --disable-doc \
+            --enable-small
+          make -j$(nproc)
+
+      # ---------- BUILD MACOS ----------
+      - name: Build macOS FFmpeg
+        if: matrix.os == 'macos-latest'
+        run: |
+          cd ffmpeg
+          ./configure \
+            --disable-shared \
+            --enable-static \
+            --disable-debug \
+            --disable-doc \
+            --enable-small
+          make -j$(sysctl -n hw.ncpu)
+
+      # ---------- BUILD WINDOWS ----------
+      - name: Build Windows FFmpeg
+        if: matrix.os == 'windows-latest'
+        shell: msys2 {0}
+        run: |
+          cd ffmpeg
+          ./configure \
+            --target-os=mingw32 \
+            --arch=x86_64 \
+            --disable-shared \
+            --enable-static \
+            --disable-debug \
+            --disable-doc \
+            --enable-small
+          make -j$(nproc)
+
+      # ---------- ARTIFACT ----------
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-${{ matrix.os }}
+          path: ffmpeg/ffmpeg*
