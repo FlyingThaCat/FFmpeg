@@ -6,7 +6,7 @@ on:
       release:
         description: "Create GitHub Release?"
         required: false
-        default: "false"
+        default: "true"
   schedule:
     - cron: "0 3 * * *"
 
