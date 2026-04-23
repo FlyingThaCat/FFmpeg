@@ -10,6 +10,10 @@ on:
   schedule:
     - cron: "0 3 * * *"
 
+# Needed for creating releases and uploading release assets
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
@@ -87,9 +91,60 @@ jobs:
             --enable-small
           make -j$(nproc)
 
-      # ---------- ARTIFACT ----------
-      - name: Upload artifact
+      # ---------- PACKAGE ARTIFACT ----------
+      - name: Package build output
+        id: pkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          OS="${{ matrix.os }}"
+          if [[ "$OS" == "windows-latest" ]]; then
+            if command -v zip >/dev/null 2>&1; then
+              zip -j "dist/ffmpeg-${{ matrix.os }}.zip" ffmpeg/ffmpeg.exe
+            else
+              7z a "dist/ffmpeg-${{ matrix.os }}.zip" ./ffmpeg/ffmpeg.exe
+            fi
+            echo "asset=dist/ffmpeg-${{ matrix.os }}.zip" >> "$GITHUB_OUTPUT"
+          else
+            tar -C ffmpeg -czf "dist/ffmpeg-${{ matrix.os }}.tar.gz" ffmpeg
+            echo "asset=dist/ffmpeg-${{ matrix.os }}.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-${{ matrix.os }}
-          path: ffmpeg/ffmpeg*
+          path: ${{ steps.pkg.outputs.asset }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.release == 'true' }}
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create tag name
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "tag=ffmpeg-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          echo "title=FFmpeg build #${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.title }}
+          draft: false
+          prerelease: true
+          generate_release_notes: true
+          files: |
+            dist/**/ffmpeg-*.zip
+            dist/**/ffmpeg-*.tar.gz
